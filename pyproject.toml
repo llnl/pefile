@@ -1,0 +1,181 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ----------------------------------------------------------------------------
+# Project metadata
+# Most fields are static; "version" is read dynamically from pefile.py so
+# that the single source of truth remains __version__ in that module.
+# ----------------------------------------------------------------------------
+[project]
+name = "pefile"
+dynamic = ["version"]
+description = "Python PE parsing module"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.6.0"
+authors = [
+    { name = "Ero Carrera", email = "ero.carrera@gmail.com" },
+]
+keywords = ["pe", "exe", "dll", "pefile", "pecoff"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "coverage",
+    "tox",
+    "tox-gh-actions",
+    "flake8",
+]
+
+[project.urls]
+Homepage = "https://github.com/erocarrera/pefile"
+Source = "https://github.com/erocarrera/pefile"
+"Bug Tracker" = "https://github.com/erocarrera/pefile/issues"
+Download = "https://github.com/erocarrera/pefile/releases"
+
+# ----------------------------------------------------------------------------
+# Setuptools configuration
+# ----------------------------------------------------------------------------
+[tool.setuptools]
+# Top-level single-file modules to include in the distribution.
+py-modules = ["pefile", "peutils"]
+
+[tool.setuptools.packages.find]
+# Include the ordlookup helper package; exclude tests from the distribution.
+include = ["ordlookup*"]
+exclude = ["tests*"]
+
+# Dynamic metadata: read __version__ from pefile.py via AST (no import needed
+# for a simple string literal assignment like  __version__ = "2024.8.26").
+[tool.setuptools.dynamic]
+version = { attr = "pefile.__version__" }
+
+# ----------------------------------------------------------------------------
+# Tox configuration (previously in tox.ini)
+# ----------------------------------------------------------------------------
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+envlist = py38,py39,py310,py311,py312,coverage
+
+[testenv]
+deps =
+    pytest
+    coverage
+commands =
+    python -m coverage run -p -m pytest --ignore=./tests/pefile_test.py
+
+[testenv:coverage]
+basepython = python3.10
+commands =
+    python -m coverage combine
+    python -m coverage report -m --skip-covered --ignore-errors
+    python -m coverage json --ignore-errors
+
+[gh-actions]
+python =
+    3.8: py38
+    3.9: py39
+    3.10: py310
+    3.11: py311
+    3.12: py312
+"""
+
+# ============================================================================
+# How to derive the version from version control (e.g. git tags)
+# ============================================================================
+#
+# The current setup keeps __version__ as a plain string in pefile.py and reads
+# it at build time via the [tool.setuptools.dynamic] "attr:" directive above.
+# If you want the version to be driven entirely by git tags instead, follow
+# the steps below.  The same technique can be extended to __author__ and
+# __contact__ by adding a post-processing hook (see step 4).
+#
+# Step 1 – Add setuptools-scm to the build requirements:
+#
+#   [build-system]
+#   requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8"]
+#   build-backend = "setuptools.build_meta"
+#
+# Step 2 – Switch the dynamic version source:
+#
+#   [project]
+#   dynamic = ["version"]          # keep this line; remove the attr: entry below
+#
+#   # Remove the [tool.setuptools.dynamic] table (or leave it empty) so that
+#   # setuptools-scm takes over version discovery.
+#
+#   [tool.setuptools_scm]
+#   # Write the discovered version into a dedicated file so that the installed
+#   # package can report its own version without setuptools being present.
+#   version_file = "_version.py"
+#
+# Step 3 – In pefile.py, replace the hard-coded assignment with:
+#
+#   try:
+#       from _version import __version__
+#   except ImportError:          # running from a source tree without the file
+#       __version__ = "0.0.0.dev0"
+#
+#   And in peutils.py the existing  __version__ = pefile.__version__  line
+#   already picks up whatever pefile exports, so no change is needed there.
+#
+# Step 4 – (Optional) Write the version back into pefile.py/peutils.py during
+#   the sdist/wheel build by adding a custom build hook.  Create a file named
+#   _custom_build.py next to pyproject.toml:
+#
+#   # _custom_build.py
+#   import re
+#   from setuptools.build_meta import build_sdist as _orig_sdist
+#   from setuptools.build_meta import build_wheel as _orig_wheel
+#
+#   def _stamp_version():
+#       try:
+#           from setuptools_scm import get_version
+#           version = get_version()
+#       except Exception:
+#           return
+#       pattern = r'^(__version__\s*=\s*)["\'].*["\']'
+#       replacement = r'\g<1>"{}"'.format(version)
+#       for path in ("pefile.py", "peutils.py"):
+#           with open(path, "r", encoding="utf-8") as fh:
+#               content = fh.read()
+#           updated = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+#           with open(path, "w", encoding="utf-8") as fh:
+#               fh.write(updated)
+#
+#   def build_sdist(sdist_directory, config_settings=None):
+#       _stamp_version()
+#       return _orig_sdist(sdist_directory, config_settings)
+#
+#   def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
+#       _stamp_version()
+#       return _orig_wheel(wheel_directory, config_settings, metadata_directory)
+#
+#   Then point pyproject.toml at the hook:
+#
+#   [build-system]
+#   requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8"]
+#   build-backend = "_custom_build"
+#   backend-path = ["."]
+#
+# Step 5 – (Optional) Stamp __author__ and __contact__ the same way by
+#   extending _stamp_version() with similar re.sub calls for those attributes.
+#
+# Step 6 – Tag releases with  git tag v2024.8.26  and push the tag.
+#   setuptools-scm will then report "2024.8.26" as the version automatically.
+#   For a dev build on a commit after the tag it reports "2024.8.26.post1.dev0"
+#   or similar, making every build uniquely identifiable from VCS history alone.
+# ============================================================================
